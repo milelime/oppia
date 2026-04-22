@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import importlib
 
+from core.controllers import reader
 from core import feconf
 from core.constants import constants
 from core.domain import (
@@ -2238,6 +2239,26 @@ class LearnerProgressTest(test_utils.GenericTestBase):
 
         self.assertEqual(recorded_calls, [self.TOPIC_ID])
 
+    def test_delete_with_invalid_activity_type_returns_empty_json(self) -> None:
+        """Tests that invalid activity type does not call remove services."""
+
+        class MockHandler:
+            def __init__(self, user_id: str) -> None:
+                self.user_id = user_id
+                self.values: Dict[str, str] = {}
+                self.rendered_values: Optional[Dict[str, str]] = None
+
+            def render_json(self, values: Dict[str, str]) -> None:
+                self.rendered_values = values
+
+        handler = MockHandler(self.user_id)
+
+        reader.LearnerIncompleteActivityHandler.delete.__wrapped__(
+            handler, 'invalid_activity_type', 'dummy_id'
+        )
+
+        self.assertEqual(handler.rendered_values, {})
+
 
 class StorePlaythroughHandlerTest(test_utils.GenericTestBase):
     """Tests for the handler that records playthroughs."""
@@ -3831,8 +3852,8 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
         interaction_id = question_services.get_interaction_id_for_question(
             question_id
         )
-        expected_state_reference = stats_services.get_state_reference_for_question(
-            question_id
+        expected_state_reference = (
+            stats_services.get_state_reference_for_question(question_id)
         )
 
         with self.swap(
@@ -3865,6 +3886,33 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
                 'This is an answer details.',
             ],
         )
+
+    def test_submit_answer_details_with_invalid_entity_type_raises_error(
+        self,
+    ) -> None:
+        """Tests that invalid entity type causes an unbound state reference."""
+
+        class MockHandler:
+            def __init__(self) -> None:
+                self.normalized_payload = {
+                    'interaction_id': 'TextInput',
+                    'answer': 'This is an answer.',
+                    'answer_details': 'This is an answer details.',
+                }
+                self.NotFoundException = Exception
+
+            def render_json(self, _: Dict[str, str]) -> None:
+                return
+
+        handler = MockHandler()
+
+        with self.swap(
+            constants, 'ENABLE_SOLICIT_ANSWER_DETAILS_FEATURE', True
+        ):
+            with self.assertRaisesRegex(UnboundLocalError, 'state_reference'):
+                reader.LearnerAnswerDetailsSubmissionHandler.put.__wrapped__(
+                    handler, 'invalid_entity_type', 'dummy_id'
+                )
 
 
 class CheckpointReachedEventHandlerTests(test_utils.GenericTestBase):
