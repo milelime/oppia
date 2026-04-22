@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import importlib
 
 from core import feconf
 from core.constants import constants
@@ -136,6 +137,58 @@ class ReaderPermissionsTest(test_utils.GenericTestBase):
         self.get_html_response(
             '%s/%s' % (feconf.EXPLORATION_URL_PREFIX, self.EXP_ID)
         )
+
+
+class ReaderHelperFunctionsTest(test_utils.GenericTestBase):
+    """Tests for helper functions in reader.py."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.signup(self.OWNER_EMAIL, self.OWNER_USERNAME)
+        owner_id = self.get_user_id_from_email(self.OWNER_EMAIL)
+
+        self.exp_id = 'helper_exp_id'
+        self.collection_id = 'helper_collection_id'
+        self.save_new_valid_exploration(
+            self.exp_id,
+            owner_id,
+            title='Helper test exploration',
+            category='Architecture',
+            language_code='en',
+        )
+        self.save_new_default_collection(
+            self.collection_id, owner_id, title='Helper test collection'
+        )
+        self.does_exploration_exist = getattr(
+            importlib.import_module('core.controllers.reader'),
+            '_does_exploration_exist',
+        )
+
+    def test_does_exploration_exist_returns_false_when_exp_is_missing(
+        self,
+    ) -> None:
+        self.assertFalse(self.does_exploration_exist('missing_id', None, None))
+
+    def test_does_exploration_exist_returns_false_when_collection_is_missing(
+        self,
+    ) -> None:
+        self.assertFalse(
+            self.does_exploration_exist(
+                self.exp_id, None, 'missing_collection_id'
+            )
+        )
+
+    def test_does_exploration_exist_returns_true_for_existing_entities(
+        self,
+    ) -> None:
+        self.assertTrue(
+            self.does_exploration_exist(self.exp_id, None, self.collection_id)
+        )
+
+    def test_does_exploration_exist_returns_true_without_collection_context(
+        self,
+    ) -> None:
+        self.assertTrue(self.does_exploration_exist(self.exp_id, None, None))
 
 
 class FeedbackIntegrationTest(test_utils.GenericTestBase):
@@ -2156,6 +2209,35 @@ class LearnerProgressTest(test_utils.GenericTestBase):
             [],
         )
 
+    def test_remove_topic_from_incomplete_list_calls_topic_service(
+        self,
+    ) -> None:
+        """Tests that learntopic delete requests route to topic removal."""
+        self.login(self.USER_EMAIL)
+        recorded_calls: List[str] = []
+
+        def _mock_remove_topic_from_partially_learnt_list(
+            user_id: str, topic_id: str
+        ) -> None:
+            self.assertEqual(user_id, self.user_id)
+            recorded_calls.append(topic_id)
+
+        with self.swap(
+            learner_progress_services,
+            'remove_topic_from_partially_learnt_list',
+            _mock_remove_topic_from_partially_learnt_list,
+        ):
+            self.delete_json(
+                '%s/%s/%s'
+                % (
+                    feconf.LEARNER_INCOMPLETE_ACTIVITY_DATA_URL,
+                    constants.ACTIVITY_TYPE_LEARN_TOPIC,
+                    self.TOPIC_ID,
+                )
+            )
+
+        self.assertEqual(recorded_calls, [self.TOPIC_ID])
+
 
 class StorePlaythroughHandlerTest(test_utils.GenericTestBase):
     """Tests for the handler that records playthroughs."""
@@ -3707,6 +3789,82 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
                 ].answer_details,
                 'This is an answer details.',
             )
+
+    def test_question_submission_calls_record_learner_answer_info(self) -> None:
+        """Tests that question submissions call learner answer recording."""
+        self.signup(self.VIEWER_EMAIL, self.VIEWER_USERNAME)
+        self.login(self.VIEWER_EMAIL)
+
+        skill_id = skill_services.get_new_skill_id()
+        self.save_new_skill(skill_id, 'user', description='Description')
+
+        question_id = question_services.get_new_question_id()
+        content_id_generator = translation_domain.ContentIdGenerator()
+        self.save_new_question(
+            question_id,
+            'user',
+            self._create_valid_question_data('ABC', content_id_generator),
+            [skill_id],
+            content_id_generator.next_content_id_index,
+        )
+
+        captured_calls: List[str] = []
+
+        def _mock_record_learner_answer_info(
+            entity_type: str,
+            state_reference: str,
+            interaction_id: str,
+            answer: str,
+            answer_details: str,
+        ) -> None:
+            captured_calls.extend(
+                [
+                    entity_type,
+                    state_reference,
+                    interaction_id,
+                    answer,
+                    answer_details,
+                ]
+            )
+
+        csrf_token = self.get_new_csrf_token()
+        interaction_id = question_services.get_interaction_id_for_question(
+            question_id
+        )
+        expected_state_reference = stats_services.get_state_reference_for_question(
+            question_id
+        )
+
+        with self.swap(
+            stats_services,
+            'record_learner_answer_info',
+            _mock_record_learner_answer_info,
+        ), self.swap(constants, 'ENABLE_SOLICIT_ANSWER_DETAILS_FEATURE', True):
+            self.put_json(
+                '%s/%s/%s'
+                % (
+                    feconf.LEARNER_ANSWER_DETAILS_SUBMIT_URL,
+                    feconf.ENTITY_TYPE_QUESTION,
+                    question_id,
+                ),
+                {
+                    'interaction_id': interaction_id,
+                    'answer': 'This is an answer.',
+                    'answer_details': 'This is an answer details.',
+                },
+                csrf_token=csrf_token,
+            )
+
+        self.assertEqual(
+            captured_calls,
+            [
+                feconf.ENTITY_TYPE_QUESTION,
+                expected_state_reference,
+                interaction_id,
+                'This is an answer.',
+                'This is an answer details.',
+            ],
+        )
 
 
 class CheckpointReachedEventHandlerTests(test_utils.GenericTestBase):
