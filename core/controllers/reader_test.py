@@ -2253,10 +2253,11 @@ class LearnerProgressTest(test_utils.GenericTestBase):
                 self.rendered_values = values
 
         handler = MockHandler(self.user_id)
-
-        reader.LearnerIncompleteActivityHandler.delete.__wrapped__(
-            handler, 'invalid_activity_type', 'dummy_id'
+        delete_handler = getattr(
+            reader.LearnerIncompleteActivityHandler.delete, '__wrapped__'
         )
+
+        delete_handler(handler, 'invalid_activity_type', 'dummy_id')
 
         self.assertEqual(handler.rendered_values, {})
 
@@ -3907,14 +3908,15 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
                 return
 
         handler = MockHandler()
+        put_handler = getattr(
+            reader.LearnerAnswerDetailsSubmissionHandler.put, '__wrapped__'
+        )
 
         with self.swap(
             constants, 'ENABLE_SOLICIT_ANSWER_DETAILS_FEATURE', True
         ):
             with self.assertRaisesRegex(UnboundLocalError, 'state_reference'):
-                reader.LearnerAnswerDetailsSubmissionHandler.put.__wrapped__(
-                    handler, 'invalid_entity_type', 'dummy_id'
-                )
+                put_handler(handler, 'invalid_entity_type', 'dummy_id')
 
 
 class CheckpointReachedEventHandlerTests(test_utils.GenericTestBase):
