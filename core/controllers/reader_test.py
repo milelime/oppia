@@ -16,12 +16,12 @@
 
 from __future__ import annotations
 
-import logging
 import importlib
+import logging
 
-from core.controllers import reader
 from core import feconf
 from core.constants import constants
+from core.controllers import reader
 from core.domain import (
     collection_domain,
     collection_services,
@@ -2249,6 +2249,7 @@ class LearnerProgressTest(test_utils.GenericTestBase):
                 self.rendered_values: Optional[Dict[str, str]] = None
 
             def render_json(self, values: Dict[str, str]) -> None:
+                """Stores rendered values for assertion in this unit test."""
                 self.rendered_values = values
 
         handler = MockHandler(self.user_id)
@@ -3902,6 +3903,7 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
                 self.NotFoundException = Exception
 
             def render_json(self, _: Dict[str, str]) -> None:
+                """No-op render_json needed by the mocked handler."""
                 return
 
         handler = MockHandler()
