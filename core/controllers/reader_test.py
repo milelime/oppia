@@ -2156,6 +2156,26 @@ class LearnerProgressTest(test_utils.GenericTestBase):
             [],
         )
 
+    def test_delete_with_learntopic_activity_type_calls_topic_removal_service(
+        self,
+    ) -> None:
+        """Tests that learntopic delete requests route to topic removal."""
+        self.login(self.USER_EMAIL)
+        with self.swap_with_checks(
+            learner_progress_services,
+            'remove_topic_from_partially_learnt_list',
+            lambda _user_id, _topic_id: None,
+            expected_args=[(self.user_id, self.TOPIC_ID)],
+        ):
+            self.delete_json(
+                '%s/%s/%s'
+                % (
+                    feconf.LEARNER_INCOMPLETE_ACTIVITY_DATA_URL,
+                    constants.ACTIVITY_TYPE_LEARN_TOPIC,
+                    self.TOPIC_ID,
+                )
+            )
+
 
 class StorePlaythroughHandlerTest(test_utils.GenericTestBase):
     """Tests for the handler that records playthroughs."""
@@ -3706,6 +3726,63 @@ class LearnerAnswerDetailsSubmissionHandlerTests(test_utils.GenericTestBase):
                     0
                 ].answer_details,
                 'This is an answer details.',
+            )
+
+    def test_submit_with_question_entity_type_calls_record_learner_answer_info(
+        self,
+    ) -> None:
+        """Tests that question submissions call learner answer recording."""
+        self.signup(self.VIEWER_EMAIL, self.VIEWER_USERNAME)
+        self.login(self.VIEWER_EMAIL)
+
+        skill_id = skill_services.get_new_skill_id()
+        self.save_new_skill(skill_id, 'user', description='Description')
+
+        question_id = question_services.get_new_question_id()
+        content_id_generator = translation_domain.ContentIdGenerator()
+        self.save_new_question(
+            question_id,
+            'user',
+            self._create_valid_question_data('ABC', content_id_generator),
+            [skill_id],
+            content_id_generator.next_content_id_index,
+        )
+
+        csrf_token = self.get_new_csrf_token()
+        interaction_id = question_services.get_interaction_id_for_question(
+            question_id
+        )
+        expected_state_reference = stats_services.get_state_reference_for_question(
+            question_id
+        )
+
+        with self.swap_with_checks(
+            stats_services,
+            'record_learner_answer_info',
+            lambda *_args: None,
+            expected_args=[
+                (
+                    feconf.ENTITY_TYPE_QUESTION,
+                    expected_state_reference,
+                    interaction_id,
+                    'This is an answer.',
+                    'This is an answer details.',
+                )
+            ],
+        ), self.swap(constants, 'ENABLE_SOLICIT_ANSWER_DETAILS_FEATURE', True):
+            self.put_json(
+                '%s/%s/%s'
+                % (
+                    feconf.LEARNER_ANSWER_DETAILS_SUBMIT_URL,
+                    feconf.ENTITY_TYPE_QUESTION,
+                    question_id,
+                ),
+                {
+                    'interaction_id': interaction_id,
+                    'answer': 'This is an answer.',
+                    'answer_details': 'This is an answer details.',
+                },
+                csrf_token=csrf_token,
             )
 
 
