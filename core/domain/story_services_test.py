@@ -926,10 +926,10 @@ class StoryServicesUnitTests(test_utils.GenericTestBase):
         with self.assertRaisesRegex(
             Exception, 'Expected change to be of type StoryChange'
         ):
+            # Here we use MyPy ignore because static type checking does not
+            # reject this negative test case.
             # This test intentionally passes an invalid changelist item to
             # verify runtime error handling in apply_change_list.
-            # We use a type ignore so static type checking does not reject this
-            # negative test case.
             story_services.apply_change_list(
                 self.STORY_ID, [{}]  # type: ignore[list-item]
             )
