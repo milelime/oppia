@@ -920,6 +920,20 @@ class StoryServicesUnitTests(test_utils.GenericTestBase):
             ],
         )
 
+    def test_apply_change_list_with_non_story_changes_raises_exception(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            Exception, 'Expected change to be of type StoryChange'
+        ):
+            # This test intentionally passes an invalid changelist item to
+            # verify runtime error handling in apply_change_list.
+            # We use a type ignore so static type checking does not reject this
+            # negative test case.
+            story_services.apply_change_list(
+                self.STORY_ID, [{}]  # type: ignore[list-item]
+            )
+
     def test_update_story_node_outline(self) -> None:
         story = story_fetchers.get_story_by_id(self.STORY_ID)
         self.assertEqual(story.story_contents.nodes[0].outline, '')
